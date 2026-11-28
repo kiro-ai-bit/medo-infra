@@ -89,11 +89,12 @@ def info(name, detail=""):
 
 
 def psql(psql_cmd, db, sql, tuples=False):
+    """Run SQL via stdin (ssh-safe: no -c quoting issues)."""
     args = psql_cmd.split()
     if tuples:
         args += ["-tA"]
-    args += ["-d", db, "-c", sql]
-    r = subprocess.run(args, capture_output=True, text=True, timeout=60)
+    args += ["-d", db]
+    r = subprocess.run(args, input=sql, capture_output=True, text=True, timeout=60)
     if r.returncode != 0:
         raise RuntimeError(f"psql failed: {r.stderr.strip()[:300]}")
     return r.stdout.strip()
@@ -158,24 +159,29 @@ def ensure_catalog(base, token, spec, assets):
     st, body = req("GET", f"{base}/v1/medicine-catalog?q={quote(brand)}", token=token)
     entries = body.get("entries", []) if st == 200 else []
     for e in entries:
-        if e.get("brandName") == brand:
+        if e.get("brandName", "").lower() == brand.lower():
             info(f"catalog '{brand}' exists ({e['id']})")
             cid = e["id"]
             photos = e.get("photos") or {}
-            have = sum(1 for s in SLOTS if (photos.get(s) or {}).get("url"))
+            have = sum(1 for s in SLOTS if photos.get(s))
             if have < len(SLOTS):
                 upload_photos(base, token, cid, slug, assets)
             return cid
     st, body = req("POST", f"{base}/v1/medicine-catalog",
                    {"brandName": brand, "ingredientNames": ings, "form": form,
                     "packagingQuantity": pack}, token=token)
-    if st not in (200, 201):
-        check(f"catalog '{brand}'", False, f"({st} {body})")
-        return None
-    cid = body["id"]
-    info(f"catalog '{brand}' created ({cid})")
-    upload_photos(base, token, cid, slug, assets)
-    return cid
+    if st in (200, 201):
+        cid = body["id"]
+        info(f"catalog '{brand}' created ({cid})")
+        upload_photos(base, token, cid, slug, assets)
+        return cid
+    if st == 409:
+        cid = (body.get("error", {}).get("details") or {}).get("existingEntryId")
+        if cid:
+            info(f"catalog '{brand}' exists via 409 ({cid})")
+            return cid
+    check(f"catalog '{brand}'", False, f"({st} {body})")
+    return None
 
 
 def ensure_medicine(base, token, patient_id, spec, catalog_id):
@@ -395,7 +401,7 @@ def main():
         sid, _ = ensure_schedule(base, p_tok, p_user, mid, spec, sched_start)
         if sid:
             med_items.append({"slug": spec[0], "schedule_id": sid, "medicine_id": mid,
-                              "dose_times": spec[10], "recurrence": spec[11],
+                              "dose_times": spec[11], "recurrence": spec[12],
                               "start_date": sched_start,
                               "caregiver_mark": spec[0] == "augmentin-625"})
 
