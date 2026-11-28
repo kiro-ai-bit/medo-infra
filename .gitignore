@@ -8,3 +8,10 @@ coverage/
 .env
 .env.*
 !.env.example
+secrets/
+.last-good.env
+.env.failed
+.env.new
+.env.deploying
+__pycache__/
+*.pyc

@@ -1,0 +1,164 @@
+# Medo dev stack — builds service images from sibling source repos (AppHub layout).
+# Usage: GITHUB_PAT=... docker compose -f compose.dev.yaml --env-file .env up -d --build
+# Requires: .env + secrets/dev/*.env (scripts/gen-env.py --env dev)
+name: medo-dev
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-healthcheck-node: &hc-node
+  interval: 10s
+  timeout: 5s
+  retries: 12
+  start_period: 20s
+
+secrets:
+  github_pat:
+    environment: GITHUB_PAT
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    <<: *restart
+    ports: ["127.0.0.1:5432:5432"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD}
+      CARE_DB_PASSWORD: ${CARE_DB_PASSWORD}
+      MEDICINE_DB_PASSWORD: ${MEDICINE_DB_PASSWORD}
+      SCHEDULE_DOSE_DB_PASSWORD: ${SCHEDULE_DOSE_DB_PASSWORD}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+      GAMIFICATION_DB_PASSWORD: ${GAMIFICATION_DB_PASSWORD}
+      BROKER_DB_PASSWORD: ${BROKER_DB_PASSWORD}
+    volumes:
+      - pgdata-dev:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [medo-dev]
+
+  identity:
+    image: medo-dev/identity:local
+    build:
+      context: ../medo-identity
+      secrets: [github_pat]
+    <<: *restart
+    env_file: secrets/dev/identity.env
+    ports: ["127.0.0.1:3001:3001"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      <<: *hc-node
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    networks: [medo-dev]
+
+  care:
+    image: medo-dev/care:local
+    build:
+      context: ../medo-care
+      secrets: [github_pat]
+    <<: *restart
+    env_file: secrets/dev/care.env
+    ports: ["127.0.0.1:3002:3002"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      <<: *hc-node
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    networks: [medo-dev]
+
+  medicine:
+    image: medo-dev/medicine:local
+    build:
+      context: ../medo-medicine
+      secrets: [github_pat]
+    <<: *restart
+    env_file: secrets/dev/medicine.env
+    ports: ["127.0.0.1:3003:3003"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      <<: *hc-node
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3003/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    networks: [medo-dev]
+
+  schedule-dose:
+    image: medo-dev/schedule-dose:local
+    build:
+      context: ../medo-schedule-dose
+      secrets: [github_pat]
+    <<: *restart
+    env_file: secrets/dev/schedule-dose.env
+    ports: ["127.0.0.1:3004:3004"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      <<: *hc-node
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3004/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    networks: [medo-dev]
+
+  notification:
+    image: medo-dev/notification:local
+    build:
+      context: ../medo-notification
+      secrets: [github_pat]
+    <<: *restart
+    env_file: secrets/dev/notification.env
+    ports: ["127.0.0.1:3005:3005"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      <<: *hc-node
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3005/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    networks: [medo-dev]
+
+  gamification:
+    image: medo-dev/gamification:local
+    build:
+      context: ../medo-gamification
+      secrets: [github_pat]
+    <<: *restart
+    env_file: secrets/dev/gamification.env
+    ports: ["127.0.0.1:3006:3006"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      <<: *hc-node
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3006/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    networks: [medo-dev]
+
+  caddy:
+    image: caddy:2-alpine
+    <<: *restart
+    ports:
+      - "127.0.0.1:8080:80"
+    environment:
+      MEDO_API_HOST: http://localhost
+      MEDO_ALLOWED_ORIGIN: http://localhost:3000
+      ACME_EMAIL: ${ACME_EMAIL:-admin@simmaps.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data-dev:/data
+      - caddy_config-dev:/config
+    depends_on:
+      - identity
+      - care
+      - medicine
+      - schedule-dose
+      - notification
+      - gamification
+    networks: [medo-dev]
+
+networks:
+  medo-dev:
+    driver: bridge
+
+volumes:
+  pgdata-dev:
+  caddy_data-dev:
+  caddy_config-dev:

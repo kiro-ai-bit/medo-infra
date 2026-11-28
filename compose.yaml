@@ -1,0 +1,143 @@
+# Medo production stack — EC2 host. Images pulled from GHCR by SHA tag.
+# Usage: docker compose -f compose.yaml --env-file .env up -d
+# Requires: .env (gen-env.py + release.sh), secrets/prod/*.env (gen-env.py)
+name: medo
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-healthcheck-node: &hc-node
+  interval: 10s
+  timeout: 5s
+  retries: 12
+  start_period: 20s
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    <<: *restart
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD}
+      CARE_DB_PASSWORD: ${CARE_DB_PASSWORD}
+      MEDICINE_DB_PASSWORD: ${MEDICINE_DB_PASSWORD}
+      SCHEDULE_DOSE_DB_PASSWORD: ${SCHEDULE_DOSE_DB_PASSWORD}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+      GAMIFICATION_DB_PASSWORD: ${GAMIFICATION_DB_PASSWORD}
+      BROKER_DB_PASSWORD: ${BROKER_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [medo]
+
+  identity:
+    image: ghcr.io/kiro-ai-bit/medo-identity:${MEDO_TAG_IDENTITY:?set in .env}
+    <<: *restart
+    env_file: secrets/prod/identity.env
+    ports: ["127.0.0.1:3001:3001"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      <<: *hc-node
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    networks: [medo]
+
+  care:
+    image: ghcr.io/kiro-ai-bit/medo-care:${MEDO_TAG_CARE:?set in .env}
+    <<: *restart
+    env_file: secrets/prod/care.env
+    ports: ["127.0.0.1:3002:3002"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      <<: *hc-node
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    networks: [medo]
+
+  medicine:
+    image: ghcr.io/kiro-ai-bit/medo-medicine:${MEDO_TAG_MEDICINE:?set in .env}
+    <<: *restart
+    env_file: secrets/prod/medicine.env
+    ports: ["127.0.0.1:3003:3003"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      <<: *hc-node
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3003/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    networks: [medo]
+
+  schedule-dose:
+    image: ghcr.io/kiro-ai-bit/medo-schedule-dose:${MEDO_TAG_SCHEDULE_DOSE:?set in .env}
+    <<: *restart
+    env_file: secrets/prod/schedule-dose.env
+    ports: ["127.0.0.1:3004:3004"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      <<: *hc-node
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3004/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    networks: [medo]
+
+  notification:
+    image: ghcr.io/kiro-ai-bit/medo-notification:${MEDO_TAG_NOTIFICATION:?set in .env}
+    <<: *restart
+    env_file: secrets/prod/notification.env
+    ports: ["127.0.0.1:3005:3005"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      <<: *hc-node
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3005/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    networks: [medo]
+
+  gamification:
+    image: ghcr.io/kiro-ai-bit/medo-gamification:${MEDO_TAG_GAMIFICATION:?set in .env}
+    <<: *restart
+    env_file: secrets/prod/gamification.env
+    ports: ["127.0.0.1:3006:3006"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      <<: *hc-node
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3006/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    networks: [medo]
+
+  caddy:
+    image: caddy:2-alpine
+    <<: *restart
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      MEDO_API_HOST: api.simmaps.com
+      MEDO_ALLOWED_ORIGIN: https://app.simmaps.com
+      ACME_EMAIL: ${ACME_EMAIL:-admin@simmaps.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - identity
+      - care
+      - medicine
+      - schedule-dose
+      - notification
+      - gamification
+    networks: [medo]
+
+networks:
+  medo:
+    driver: bridge
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
