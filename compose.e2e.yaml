@@ -1,0 +1,46 @@
+# Medo e2e overlay — layer on compose.dev.yaml for Playwright golden paths (ticket 32).
+# Usage: GITHUB_PAT=... docker compose -f compose.dev.yaml -f compose.e2e.yaml --profile e2e up -d --build
+# Differences vs dev: Caddy serves https://localhost (internal CA, port 443) so the
+# Secure refresh cookie works in a real browser; frontend container added.
+name: medo-e2e
+
+secrets:
+  github_pat:
+    environment: GITHUB_PAT
+
+services:
+  caddy:
+    ports: !override
+      - "127.0.0.1:443:443"
+      - "127.0.0.1:443:443/udp"
+    environment:
+      MEDO_API_HOST: https://localhost
+      MEDO_ALLOWED_ORIGIN: http://localhost:3000
+      ACME_EMAIL: ${ACME_EMAIL:-admin@simmaps.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data-e2e:/data
+      - caddy_config-e2e:/config
+
+  frontend:
+    profiles: ["e2e"]
+    image: medo-e2e/frontend:local
+    build:
+      context: ../medo-frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: https://localhost
+        NEXT_PUBLIC_APP_ENV: development
+      secrets: [github_pat]
+    ports: ["127.0.0.1:3000:3000"]
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: https://localhost
+      NEXT_PUBLIC_APP_ENV: development
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+    depends_on:
+      - caddy
+    networks: [medo-dev]
+
+volumes:
+  caddy_data-e2e:
+  caddy_config-e2e:
