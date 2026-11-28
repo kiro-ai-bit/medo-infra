@@ -57,6 +57,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("base", nargs="?", default="https://api.simmaps.com")
     ap.add_argument("--psql", default="")
+    ap.add_argument("--psql-stdin", default="",
+                    help="psql command prefix (incl. -d <db>) that reads SQL from "
+                         "stdin — use for remote/ssh psql where -c quoting breaks")
     args = ap.parse_args()
     base = args.base.rstrip("/")
     ok = True
@@ -81,9 +84,14 @@ def main():
     patient_id = body["userId"]
 
     # --- verify email via DB (no mailbox in smoke) ---
-    if args.psql:
+    if args.psql or args.psql_stdin:
         sql = f"UPDATE users SET email_verified=true WHERE email='{email}';"
-        r = subprocess.run(args.psql.split() + ["-c", sql], capture_output=True, text=True)
+        if args.psql_stdin:
+            r = subprocess.run(args.psql_stdin.split(), input=sql,
+                               capture_output=True, text=True)
+        else:
+            r = subprocess.run(args.psql.split() + ["-c", sql],
+                               capture_output=True, text=True)
         ok &= check("email_verified flip", r.returncode == 0, r.stderr.strip()[:120])
     else:
         print("[INFO] no --psql: skipping email verify; login expected to 403")
