@@ -1,0 +1,17 @@
+{
+  "name": "medo-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Medo Playwright e2e golden paths — runs against compose.e2e.yaml stack",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@types/node": "^26.6.6",
+    "typescript": "^5.9.3"
+  }
+}
