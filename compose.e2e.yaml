@@ -1,7 +1,9 @@
 # Medo e2e overlay — layer on compose.dev.yaml for Playwright golden paths (ticket 32).
 # Usage: GITHUB_PAT=... docker compose -f compose.dev.yaml -f compose.e2e.yaml --profile e2e up -d --build
-# Differences vs dev: Caddy serves https://localhost (internal CA, port 443) so the
-# Secure refresh cookie works in a real browser; frontend container added.
+# Differences vs dev: Caddy (Caddyfile.e2e) serves https://localhost (API, port 443)
+# AND https://localhost:3000 (frontend) so page origin and API origin are
+# same-site https — required for the SameSite=Lax Secure refresh cookie.
+# RESEND_API_KEY is blanked so tests never send real email.
 name: medo-e2e
 
 secrets:
@@ -13,12 +15,14 @@ services:
     ports: !override
       - "127.0.0.1:443:443"
       - "127.0.0.1:443:443/udp"
+      - "127.0.0.1:3000:3000"
     environment:
       MEDO_API_HOST: https://localhost
-      MEDO_ALLOWED_ORIGIN: http://localhost:3000
+      MEDO_APP_HOST: https://localhost:3000
+      MEDO_ALLOWED_ORIGIN: https://localhost:3000
       ACME_EMAIL: ${ACME_EMAIL:-admin@simmaps.com}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile.e2e:/etc/caddy/Caddyfile:ro
       - caddy_data-e2e:/data
       - caddy_config-e2e:/config
 
@@ -31,7 +35,6 @@ services:
         NEXT_PUBLIC_API_BASE_URL: https://localhost
         NEXT_PUBLIC_APP_ENV: development
       secrets: [github_pat]
-    ports: ["127.0.0.1:3000:3000"]
     environment:
       NEXT_PUBLIC_API_BASE_URL: https://localhost
       NEXT_PUBLIC_APP_ENV: development
@@ -40,6 +43,13 @@ services:
     depends_on:
       - caddy
     networks: [medo-dev]
+
+  notification:
+    environment:
+      # E2E must never send real email. Bootstrap requires min(1) and the
+      # Resend client fails open (sent:false) — a syntactically valid fake key
+      # disables delivery without breaking env validation.
+      RESEND_API_KEY: "re_e2e_disabled"
 
 volumes:
   caddy_data-e2e:
