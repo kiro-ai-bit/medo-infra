@@ -123,7 +123,6 @@ def ensure_account(base, psql_cmd, spec):
 
 
 def upload_photos(base, token, catalog_id, slug, assets):
-    global _last_key
     ok = True
     for slot in SLOTS:
         path = os.path.join(assets, f"{slug}-{slot}.png")

@@ -18,6 +18,8 @@ on any host.
 | `scripts/deploy.sh` | Host: pull → up → health/ready/caddy gates → `.last-good` rollback |
 | `scripts/ready-check.mjs` | `/ready` gate (service-JWT minted inside identity container) |
 | `scripts/smoke.py` | Full-stack smoke: signup→verify→login→medicine→schedule→dose |
+| `scripts/gen-seed-assets.py` | Generates showcase medicine photos → `scripts/seed-assets/` |
+| `scripts/seed-showcase.py` | Idempotent Kiroween showcase seeder (accounts, meds, schedules, dose history) |
 
 ## Quick start (dev)
 
